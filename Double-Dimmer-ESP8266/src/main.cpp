@@ -3,7 +3,7 @@
 #include <PubSubClient.h>
 #include <ArduinoOTA.h>
 
-#include "../config.h"
+#include "config.h"
 
 #define ENC_L_PINA     D0
 #define ENC_L_PINB     D2

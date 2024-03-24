@@ -7,8 +7,11 @@
 
 #define LEFT 14 // D1 (GPIO5)
 #define TOP 4 // D2 (GPIO4)
-#define BOTTOM 12 // D5 (GPIO14)
-#define RIGHT 5 // D6 (GPIO12)
+// Change bottom and right pins because bottom pin doesnotworkanymore on  the gear lever.
+// So the right will be  botto for now.  
+// Right needs to be 5 and bottom 12 under normal circumstances.
+#define BOTTOM 5 // D5 (GPIO14)
+#define RIGHT 12 // D6 (GPIO12)
 
 const char* ssid = SSID;
 const char* password = PASSWORD;

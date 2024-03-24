@@ -1,7 +1,13 @@
-#include "../config.h"
-
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
+#include <EncoderButton.h>
+
+#include <config.h>
+
+// Rotary Encoder Pins
+#define CLK_PIN D2
+#define DT_PIN D1
+#define SW_PIN D3
 
 // WiFi credentials
 const char* ssid = SSID;
@@ -17,12 +23,15 @@ const char* mqtt_topic = "esp8266/test";
 WiFiClient espClient;
 PubSubClient client(espClient);
 
+// Setup EncoderButton
+EncoderButton eb1(CLK_PIN, DT_PIN, SW_PIN);
+
 unsigned long previousMillis = 0;
 const long interval = 10000;  // 10 seconds
 
 void setup() {
-  Serial.begin(115200);
-  
+  Serial.begin(9600);
+
   // Connecting to WiFi
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
@@ -34,20 +43,6 @@ void setup() {
 
   // Setting up MQTT
   client.setServer(mqtt_server, mqtt_port);
-}
-
-void loop() {
-  // Ensure MQTT is connected
-  if (!client.connected()) {
-    reconnect();
-  }
-  client.loop();
-  
-  unsigned long currentMillis = millis();
-  if (currentMillis - previousMillis >= interval) {
-    previousMillis = currentMillis;
-    sendMqttMessage();
-  }
 }
 
 void sendMqttMessage() {
@@ -69,5 +64,19 @@ void reconnect() {
       Serial.println(" try again in 5 seconds");
       delay(5000);
     }
+  }
+}
+
+void loop() {
+  // Ensure MQTT is connected
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
+  
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousMillis >= interval) {
+    previousMillis = currentMillis;
+    sendMqttMessage();
   }
 }

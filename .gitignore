@@ -13,3 +13,4 @@
 
 # User Settings and Data
 config.h
+config_fallback.h

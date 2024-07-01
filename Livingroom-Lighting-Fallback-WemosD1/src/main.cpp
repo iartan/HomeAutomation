@@ -5,8 +5,7 @@
 #include <FastLED.h>
 #include <PubSubClient.h>
 
-#include "../config.h"
-#include "../config_fallback.h"
+#include "../../config_fallback.h"
 
 #define HOSTNAME                      "LivingRoom HOSTNAME"
 #define AVAILABILITY_TOPIC          "LivingRoom Lighting"

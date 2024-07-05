@@ -4,6 +4,11 @@
 // #define FASTLED_INTERRUPT_RETRY_COUNT 0
 #include <FastLED.h>
 #include <PubSubClient.h>
+#include <time.h>
+#include <TZ.h>
+#include <FS.h>
+#include <LittleFS.h>
+#include <CertStoreBearSSL.h>
 
 #include "../../config_fallback.h"
 
@@ -20,14 +25,25 @@
 #define BRIGHTNESS          255
 #define FRAMES_PER_SECOND   60
 
-const char* ssid = SSID_FALLBACK;
-const char* password = PASSWORD_FALLBACK;
-const char* mqtt_server = MQTT_SERVER_FALLBACK;
+const char* ssid = SSID;
+const char* password = PASSWORD;
+const char* mqtt_server = MQTT_SERVER;
+const char* mqtt_user = MQTT_USER;
+const char* mqtt_password = MQTT_PASSWORD;
+
+// A single, global CertStore which can be used by all connections.
+// Needs to stay live the entire time any of the WiFiClientBearSSLs
+// are present.
+BearSSL::CertStore certStore;
 
 CRGB leds[NUM_LEDS];
 
-WiFiClient wifiClient;
-PubSubClient client(wifiClient);
+WiFiClientSecure espClient;
+PubSubClient * client;
+unsigned long lastMsg = 0;
+#define MSG_BUFFER_SIZE (500)
+char msg[MSG_BUFFER_SIZE];
+int value = 0;
 
 bool updateLiving = false;
 bool updateKitchen = false;
@@ -63,13 +79,32 @@ void setup_wifi() {
 }
 
 boolean reconnect() {
-  if (client.connect("LivingRoom Lighting"))
+  if (client->connect("LivingRoom Lighting", mqtt_user, mqtt_password))
   {
-    client.publish(AVAILABILITY_TOPIC, "LivingRoom Lighting online");
-    client.subscribe(KITCHEN_COMMAND);
-    client.subscribe(LIVING_COMMAND);
+    client->publish(AVAILABILITY_TOPIC, "LivingRoom Lighting online");
+    client->subscribe(KITCHEN_COMMAND);
+    client->subscribe(LIVING_COMMAND);
   }
-  return client.connected();
+  return client->connected();
+}
+
+void setDateTime() {
+  // You can use your own timezone, but the exact time is not used at all.
+  // Only the date is needed for validating the certificates.
+  configTime(TZ_Europe_Berlin, "pool.ntp.org", "time.nist.gov");
+
+  Serial.print("Waiting for NTP time sync: ");
+  time_t now = time(nullptr);
+  while (now < 8 * 3600 * 2) {
+    delay(100);
+    Serial.print(".");
+    now = time(nullptr);
+  }
+  Serial.println();
+
+  struct tm timeinfo;
+  gmtime_r(&now, &timeinfo);
+  Serial.printf("%s %s", tzname[0], asctime(&timeinfo));
 }
 
 void setupOTA() {
@@ -122,11 +157,28 @@ void callback(char *topic, byte *payload, unsigned int length) {
 }
 
 void setup() {
+  delay(500);
   Serial.begin(9600);
+  
+  LittleFS.begin();
   setup_wifi();
+  setDateTime();
 
-  client.setServer(MQTT_SERVER, 1883);
-  client.setCallback(callback);
+  int numCerts = certStore.initCertStore(LittleFS, PSTR("/certs.idx"), PSTR("/certs.ar"));
+  Serial.printf("Number of CA certs read: %d\n", numCerts);
+  if (numCerts == 0) {
+    Serial.printf("No certs found. Did you run certs-from-mozilla.py and upload the LittleFS directory before running?\n");
+    return; // Can't connect to anything w/o certs!
+  }
+
+  BearSSL::WiFiClientSecure *bear = new BearSSL::WiFiClientSecure();
+  // Integrate the cert store with this connection
+  bear->setCertStore(&certStore);
+
+  client = new PubSubClient(*bear);
+
+  client->setServer(mqtt_server, 8883);
+  client->setCallback(callback);
 
   setupOTA();
 
@@ -139,7 +191,7 @@ void setup() {
 }
 
 void loop() {
-  if (!client.connected()) {
+  if (!client->connected()) {
     unsigned long now = millis();
     if (now - lastReconnectAttempt > 5000) {
         Serial.print("Trying to connect to MQTT...");
@@ -153,13 +205,12 @@ void loop() {
   else 
   {
   // Client connected
-  client.loop();
+  client->loop();
   }
-  float kitchenHarmony;
 
   if (updateLiving) {
     updateLiving = false;
-    client.publish(LIVING_STATE, String(valueLiving).c_str(), true);
+    client->publish(LIVING_STATE, String(valueLiving).c_str(), true);
 
     for(int x = 106; x < 400; x += 2) {
       leds[x] = CHSV(160, 255, valueLiving * 2.55);
@@ -171,7 +222,7 @@ void loop() {
   // /*
   if (updateKitchen) {
     updateKitchen = false;
-    client.publish(KITCHEN_STATE, String(valueKitchen).c_str(), true);
+    client->publish(KITCHEN_STATE, String(valueKitchen).c_str(), true);
   
     for(int y = 0; y < 105; y += 2) {
       leds[y] = CHSV(160, 255, valueKitchen * 2.55);
